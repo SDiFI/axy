@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.16...3.23)
+cmake_minimum_required(VERSION 3.21)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -33,6 +33,13 @@ string(
 
 set(CMAKE_MODULE_PATH
     ${CMAKE_MODULE_PATH} "${PROJECT_SOURCE_DIR}/cmake/Modules/")
+
+option(PREFER_STATIC "Prefer static libs" ON)
+if(PREFER_STATIC)
+  set(BUILD_SHARED_LIBS OFF)
+  set(CMAKE_FIND_LIBRARY_SUFFIXES ".a" ".so")
+  set(CMAKE_POLICY_DEFAULT_CMP0069 NEW)
+endif()
 
 include(cmake/deps.cmake)
 

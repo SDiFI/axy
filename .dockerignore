@@ -1,0 +1,7 @@
+*
+!src/**
+!proto/**
+!test/**
+!configured_files/**
+!cmake/**
+!CMakeLists.txt

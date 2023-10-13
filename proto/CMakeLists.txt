@@ -8,7 +8,7 @@ list(TRANSFORM PROTOS PREPEND "${CMAKE_CURRENT_BINARY_DIR}/")
 add_custom_command(
   OUTPUT ${PROTOS}
   #TODO(rkjaran): make this point to the git repo
-  COMMAND buf export https://github.com/sdifi/protos.git -o ${CMAKE_CURRENT_BINARY_DIR}
+  COMMAND buf export "https://github.com/sdifi/protos.git#branch=STIFI-64/basic-protos" -o ${CMAKE_CURRENT_BINARY_DIR}
   COMMENT "Running Buf export for SDiFI"
   VERBATIM)
 
@@ -59,4 +59,3 @@ add_custom_command(
   DEPENDS ${PROTOS})
 add_library(protos ${PROTO_SRCS} ${PROTO_HDRS} ${PROTO_GRPC_SRCS} ${PROTO_GRPC_HDRS})
 target_include_directories(protos PUBLIC ${CMAKE_CURRENT_BINARY_DIR})
-target_link_libraries(protos protobuf::libprotobuf gRPC::grpc++)

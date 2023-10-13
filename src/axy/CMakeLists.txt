@@ -9,6 +9,7 @@ target_link_libraries(
   axylib
   PUBLIC
   redis++::redis++_static
+  hiredis::hiredis
   gRPC::grpc++
   gRPC::grpc++_reflection
   CLI11::CLI11
@@ -40,4 +41,14 @@ target_link_libraries(
   test-client
   PRIVATE
   axylib
+)
+
+# Please note that this install target is really only usable for the Docker
+# image
+include(GNUInstallDirs)
+install(
+  TARGETS axy
+  RUNTIME_DEPENDENCIES
+  POST_EXCLUDE_REGEXES
+  "ld-linux.*" "libstdc++\\.so.*" "libgcc_s\\.so.*" "libc\\.so.*" "libm\\.so.*" "libdl\\.so.*" "librt\\.so.*"
 )
