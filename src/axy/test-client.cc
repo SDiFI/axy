@@ -4,7 +4,11 @@
 #include <grpcpp/security/credentials.h>
 #include <sdifi/speech/v1alpha/speech.grpc.pb.h>
 
+#include <CLI/CLI.hpp>
+#include <cstdint>
+#include <cstdlib>
 #include <fstream>
+#include <iostream>
 #include <string>
 #include <thread>
 
@@ -35,16 +39,44 @@ void PrintErrorWithDetails(const grpc::Status &stat,
 }
 
 int main(int argc, char *argv[]) {
-  auto creds = grpc::InsecureChannelCredentials();
-  auto channel = grpc::CreateChannel("localhost:50051", creds);
-  auto stub = sdifi::speech::v1alpha::SpeechService::NewStub(channel);
+  CLI::App app{"Test client for Axy"};
+  app.option_defaults()->always_capture_default();
 
-  const std::string wave_filename = argv[1];
+  std::string wave_filename;
+  app.add_option("wave_filename", wave_filename,
+                 "Audio file (WAVE s16le). Use - for stdin.")
+      ->required()
+      ->option_text(" ");
+
+  std::string conversation_id;
+  app.add_option("conversation_id", conversation_id,
+                 "Conversation ID for Masdif")
+      ->required()
+      ->option_text(" ");
+
+  std::int32_t sample_rate_hertz = 16000;
+  app.add_option("-r,--sample-rate-hertz", sample_rate_hertz,
+                 "Sample rate in hertz");
+
+  std::string language_code = "is-IS";
+  app.add_option("-l,--language-code", language_code, "Language code");
+
+  std::string server_address = "localhost:50051";
+  app.add_option("--server-address", server_address);
+
+  bool single_utterance = false;
+  app.add_flag("--single-utterance", single_utterance);
+
+  CLI11_PARSE(app, argc, argv);
+
+  auto creds = grpc::InsecureChannelCredentials();
+  auto channel = grpc::CreateChannel(server_address, creds);
+  auto stub = sdifi::speech::v1alpha::SpeechService::NewStub(channel);
 
   sdifi::speech::v1alpha::RecognitionConfig config;
   config.set_encoding(sdifi::speech::v1alpha::RecognitionConfig::LINEAR16);
-  config.set_sample_rate_hertz(16000);
-  config.set_language_code("is-IS");
+  config.set_sample_rate_hertz(sample_rate_hertz);
+  config.set_language_code(language_code);
   config.set_enable_automatic_punctuation(true);
 
   std::cerr << config.Utf8DebugString() << '\n';
@@ -53,7 +85,7 @@ int main(int argc, char *argv[]) {
   ctx.set_wait_for_ready(true);
   auto stream = stub->StreamingRecognize(&ctx);
 
-  std::thread reader{[&stream]() {
+  std::jthread reader{[&stream]() {
     try {
       sdifi::speech::v1alpha::StreamingRecognizeResponse res;
       stream->WaitForInitialMetadata();
@@ -86,10 +118,11 @@ int main(int argc, char *argv[]) {
     std::cerr << "Could not open stream from '" << wave_filename << "'\n";
     return EXIT_FAILURE;
   }
-
   sdifi::speech::v1alpha::StreamingRecognizeRequest req;
   req.mutable_streaming_config()->mutable_config()->CopyFrom(config);
   req.mutable_streaming_config()->set_interim_results(true);
+  req.mutable_streaming_config()->set_conversation(conversation_id);
+  req.mutable_streaming_config()->set_single_utterance(single_utterance);
 
   if (!stream->Write(req)) {
     std::cerr << "Initial write failed\n";
@@ -109,7 +142,6 @@ int main(int argc, char *argv[]) {
   }
 
   stream->WritesDone();
-  reader.join();
   if (grpc::Status stat = stream->Finish(); !stat.ok()) {
     PrintErrorWithDetails(stat);
     return EXIT_FAILURE;
