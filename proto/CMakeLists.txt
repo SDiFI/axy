@@ -29,6 +29,7 @@ add_custom_command(
   COMMAND buf export https://github.com/tiro-is/tiro-speech-core.git --path=proto --exclude-imports -o ${CMAKE_CURRENT_BINARY_DIR}
   COMMAND cmake -E copy_directory ${CMAKE_CURRENT_BINARY_DIR}/proto/tiro ${CMAKE_CURRENT_BINARY_DIR}/tiro
   COMMAND cmake -E copy_directory ${CMAKE_CURRENT_BINARY_DIR}/proto/google ${CMAKE_CURRENT_BINARY_DIR}/google
+  COMMAND cmake -E remove_directory ${CMAKE_CURRENT_BINARY_DIR}/proto
   COMMENT "Running Buf export for Tiro Speech Core"
   VERBATIM)
 
