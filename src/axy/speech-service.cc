@@ -1,29 +1,113 @@
 #include "src/axy/speech-service.h"
 
 #include <fmt/core.h>
+#include <google/protobuf/util/time_util.h>
 #include <grpcpp/client_context.h>
 #include <grpcpp/server_context.h>
 #include <grpcpp/support/client_callback.h>
 #include <grpcpp/support/status.h>
+#include <sdifi/events/v1alpha/event.pb.h>
 #include <sdifi/speech/v1alpha/speech.pb.h>
+#include <sw/redis++/redis.h>
+#include <tiro/speech/v1alpha/speech.grpc.pb.h>
 #include <tiro/speech/v1alpha/speech.pb.h>
 
 #include <atomic>
+#include <concepts>
 #include <cstdio>
-#include <iostream>
 #include <memory>
+#include <optional>
+#include <string>
+#include <utility>
+#include <vector>
+
+#include "src/axy/logging.h"
 
 namespace axy {
 
 namespace {
 
+auto Convert(
+    const tiro::speech::v1alpha::StreamingRecognizeResponse::SpeechEventType&
+        in_event_type) {
+  switch (in_event_type) {
+    using In = tiro::speech::v1alpha::StreamingRecognizeResponse;
+    using Out = sdifi::speech::v1alpha::StreamingRecognizeResponse;
+    case In::END_OF_SINGLE_UTTERANCE:
+      return Out::END_OF_SINGLE_UTTERANCE;
+    default:
+      return Out::SPEECH_EVENT_UNSPECIFIED;
+  }
+}
+
+template <typename T>
+concept StreamingRecognizeResponse = requires(T r) {
+                                       r.speech_event_type();
+                                       r.results(0);
+                                       {
+                                         r.results(0).is_final()
+                                         } -> std::same_as<bool>;
+                                     };
+
+/** Convert a streaming recognize response to an Event
+ *
+ * \returns The event type if the conversion was successful
+ */
+template <StreamingRecognizeResponse T>
+std::optional<std::string> ConvertToEvent(
+    const std::string& conversation_id, const T& resp,
+    sdifi::events::v1alpha::Event& event) {
+  auto md = event.mutable_metadata();
+
+  md->mutable_created_at()->CopyFrom(
+      google::protobuf::util::TimeUtil::GetCurrentTime());
+
+  auto convo = md->mutable_conversation();
+  convo->set_name(conversation_id);
+
+  if (resp.speech_event_type() != T::SPEECH_EVENT_UNSPECIFIED) {
+    event.mutable_speech_partial()->set_speech_event_type(
+        Convert(resp.speech_event_type()));
+  } else if (resp.results_size() > 0) {
+    auto result = resp.results(0);
+    if (result.alternatives_size() > 0 &&
+        !result.alternatives(0).transcript().empty()) {
+      if (result.is_final()) {
+        event.mutable_speech_final()->set_transcript(
+            result.alternatives(0).transcript());
+      } else {
+        event.mutable_speech_partial()->set_transcript(
+            result.alternatives(0).transcript());
+      }
+    }
+  }
+
+  std::string type;
+  switch (event.payload_case()) {
+    using sdifi::events::v1alpha::Event;
+    case Event::kSpeechContent:
+      type = event.speech_content().GetTypeName();
+      break;
+    case Event::kSpeechPartial:
+      type = event.speech_partial().GetTypeName();
+      break;
+    case Event::kSpeechFinal:
+      type = event.speech_final().GetTypeName();
+      break;
+    case Event::PAYLOAD_NOT_SET:
+      type = "<unk>";
+      break;
+    default:
+      return std::nullopt;
+  }
+
+  return type;
+}
+
 void ConvertRequest(sdifi::speech::v1alpha::StreamingRecognizeRequest& in,
                     tiro::speech::v1alpha::StreamingRecognizeRequest& out) {
   out.Clear();
   if (in.has_streaming_config()) {
-    fmt::println(stderr, "conversation {}",
-                 in.streaming_config().conversation());
-
     auto* out_streaming_config = out.mutable_streaming_config();
 
     out_streaming_config->set_interim_results(
@@ -79,7 +163,7 @@ void ConvertResponse(
         break;
 
       default:
-        fmt::println(stderr, "Unknown event type, ignoring...");
+        AXY_LOG_WARN("Unknown event type, ignoring...");
     }
   } else if (in.results_size() > 0) {
     for (const auto& res : in.results()) {
@@ -106,6 +190,7 @@ void ConvertResponse(
 grpc::ServerBidiReactor<sdifi::speech::v1alpha::StreamingRecognizeRequest,
                         sdifi::speech::v1alpha::StreamingRecognizeResponse>*
 SpeechServiceImpl::StreamingRecognize(grpc::CallbackServerContext* context) {
+  // This is a self deleting callback reactor
   class ServerReactor
       : public grpc::ServerBidiReactor<
             sdifi::speech::v1alpha::StreamingRecognizeRequest,
@@ -113,97 +198,135 @@ SpeechServiceImpl::StreamingRecognize(grpc::CallbackServerContext* context) {
    public:
     explicit ServerReactor(grpc::CallbackServerContext* context,
                            tiro::speech::v1alpha::Speech::Stub* stub,
-                           int conn_id)
-        : conn_id_{conn_id},
-          client_ctx_{grpc::ClientContext::FromCallbackServerContext(*context)},
-          client_reactor_{new ClientReactor{this}} {
-      stub->async()->StreamingRecognize(client_ctx_.get(), client_reactor_);
-
-      StartRead(&req_);
-
-      client_reactor_->StartRead(&client_reactor_->in_resp_);
+                           sw::redis::Redis* redis_client)
+        : client_reactor_{new ClientReactor{
+              this, stub,
+              grpc::ClientContext::FromCallbackServerContext(*context),
+              redis_client}} {
+      StartRead(&req);
+      client_reactor_->StartRead(&client_reactor_->in_resp);
       client_reactor_->AddHold();
       client_reactor_->StartCall();
     }
 
     void OnReadDone(bool ok) override {
       if (ok) {
-        ConvertRequest(req_, client_reactor_->out_req_);
-        client_reactor_->StartWrite(&client_reactor_->out_req_);
+        if (req.has_streaming_config()) {
+          conversation_id_ = req.streaming_config().conversation();
+        }
+        ConvertRequest(req, client_reactor_->out_req);
+        client_reactor_->StartWrite(&client_reactor_->out_req);
       } else {
         client_reactor_->StartWritesDone();
-        client_reactor_->RemoveHold();
       }
     }
 
-    void OnDone() override { delete this; }
+    void OnDone() override {
+      AXY_LOG_INFO("{}: server all done.", conversation_id_);
+      client_reactor_->server_gone = true;
+      client_reactor_->RemoveHold();
+      delete this;
+    }
 
-    void OnCancel() override { Finish(grpc::Status::CANCELLED); }
+    void OnCancel() override {
+      AXY_LOG_DEBUG("{}: server cancelled.", conversation_id_);
+    }
 
     void OnWriteDone(bool ok) override {
       if (!ok) {
-        fmt::println(stderr, "{}: no more server writes", conn_id_);
+        fmt::println(stderr, "{}: no more server writes", conversation_id_);
         Finish(grpc::Status::CANCELLED);
       }
     }
 
    private:
-    int conn_id_;
-
-    std::unique_ptr<grpc::ClientContext> client_ctx_;
-
-    sdifi::speech::v1alpha::StreamingRecognizeRequest req_;
-    sdifi::speech::v1alpha::StreamingRecognizeResponse resp_;
-
     // TODO(rkjaran): Generalize this client callback reactor for more backends
     class ClientReactor
         : public grpc::ClientBidiReactor<
               tiro::speech::v1alpha::StreamingRecognizeRequest,
               tiro::speech::v1alpha::StreamingRecognizeResponse> {
      public:
-      explicit ClientReactor(ServerReactor* server_reactor)
-          : server_reactor_{server_reactor} {}
+      explicit ClientReactor(ServerReactor* server_reactor,
+                             tiro::speech::v1alpha::Speech::Stub* stub,
+                             std::unique_ptr<grpc::ClientContext> ctx,
+                             sw::redis::Redis* redis_client)
+          : server_reactor_{server_reactor},
+            ctx_{std::move(ctx)},
+            redis_client_{redis_client} {
+        stub->async()->StreamingRecognize(ctx_.get(), this);
+      }
 
       void OnReadDone(bool ok) override {
         if (ok) {
-          ConvertResponse(in_resp_, server_reactor_->resp_);
-          server_reactor_->StartWrite(&server_reactor_->resp_);
+          if (!server_gone) {
+            ConvertResponse(in_resp, server_reactor_->resp);
+            server_reactor_->StartWrite(&server_reactor_->resp);
+          }
 
-          StartRead(&in_resp_);
+          if (redis_client_ != nullptr) {
+            sdifi::events::v1alpha::Event event;
+
+            if (auto type = ConvertToEvent(server_reactor_->conversation_id_,
+                                           in_resp, event)) {
+              std::string stream_key = fmt::format(
+                  "sdifi/conversation/{key}",
+                  fmt::arg("key", server_reactor_->conversation_id_));
+
+              AXY_LOG_INFO("Writing message to {}", stream_key);
+              std::vector<std::pair<std::string, std::string>> attrs{
+                  {":type", type.value()},
+                  {":content", event.SerializeAsString()}};
+              redis_client_->xadd(stream_key, "*", attrs.begin(), attrs.end());
+            }
+          }
+
+          StartRead(&in_resp);
         } else {
-          fmt::println(stderr, "{}: no more client reads",
-                       server_reactor_->conn_id_);
-          server_reactor_->Finish(grpc::Status::OK);
+          AXY_LOG_DEBUG("no more client reads");
+          if (!server_gone) {
+            server_reactor_->Finish(grpc::Status::OK);
+          }
         }
       }
 
       void OnWriteDone(bool ok) override {
-        if (ok) {
-          server_reactor_->StartRead(&server_reactor_->req_);
+        if (ok && !server_gone) {
+          server_reactor_->StartRead(&server_reactor_->req);
         } else {
-          fmt::println(stderr, "{}: client write went bad",
-                       server_reactor_->conn_id_);
+          AXY_LOG_DEBUG("client write went bad");
         }
       }
 
+      void OnWritesDoneDone(bool ok) override {
+        AXY_LOG_DEBUG("client writesdone done");
+      }
+
       void OnDone(const grpc::Status&) override {
-        fmt::println(stderr, "{}: client all done", server_reactor_->conn_id_);
+        AXY_LOG_INFO("client all done");
         delete this;
       }
 
      private:
-      friend ServerReactor;
       ServerReactor* server_reactor_;
+      std::unique_ptr<grpc::ClientContext> ctx_;
+      sw::redis::Redis* redis_client_;
 
-      tiro::speech::v1alpha::StreamingRecognizeResponse in_resp_;
-      tiro::speech::v1alpha::StreamingRecognizeRequest out_req_;
-    }* client_reactor_;
+     public:
+      std::atomic<bool> server_gone = false;
+      tiro::speech::v1alpha::StreamingRecognizeResponse in_resp;
+      tiro::speech::v1alpha::StreamingRecognizeRequest out_req;
+    };
+
+    ClientReactor* client_reactor_;
+
+   public:
+    sdifi::speech::v1alpha::StreamingRecognizeRequest req;
+    sdifi::speech::v1alpha::StreamingRecognizeResponse resp;
+    std::string conversation_id_ = "<unk>";
   };
 
-  static int conn_id = 0;
-
   // ServerReactor deletes itself once finished.
-  return new ServerReactor{context, stub_.get(), ++conn_id};
+  return new ServerReactor{context, stub_.get(), &redis_client_};
 }
 
 }  // namespace axy

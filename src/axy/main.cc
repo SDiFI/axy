@@ -45,15 +45,21 @@ int main(int argc, char* argv[]) {
 
     std::string log_level = "info";
     app.add_option("--log-level", log_level)
-        ->check(CLI::IsMember({"trace", "debug", "info", "warn", "error"}));
+        ->check(CLI::IsMember({"trace", "debug", "info", "warn", "error"}))
+        ->ignore_case();
 
     axy::Server::Options server_opts;
     app.add_option("--listen-address", server_opts.listen_address);
     app.add_option("--backend-speech-server-address",
-                   server_opts.backend_speech_server_address);
+                   server_opts.backend_speech_server_address,
+                   "gRPC server that provides the "
+                   "`tiro.speech.v1alpha.Speech` service.");
     app.add_flag("--backend-speech-server-use-tls",
                  server_opts.backend_speech_server_use_tls);
-    app.add_option("--redis-address", server_opts.redis_address);
+    app.add_option("--redis-address", server_opts.redis_address,
+                   "The server will write conversation events to streams with "
+                   "keys 'sdifi/conversation/{conv_id}' where {conv_id} is the "
+                   "conversation ID.");
 
     CLI11_PARSE(app, argc, argv);
 
