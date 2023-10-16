@@ -1,3 +1,3 @@
 ---
-Checks: 'google-*'
+Checks: 'google-*,bugprone-*,-bugprone-branch-clone,modernizer-*'
 
