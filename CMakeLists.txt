@@ -41,6 +41,8 @@ if(PREFER_STATIC)
   set(CMAKE_POLICY_DEFAULT_CMP0069 NEW)
 endif()
 
+option(ENABLE_SANITIZERS "Use UBSan and ASan in debug build" ${PROJECT_IS_TOP_LEVEL})
+
 include(cmake/deps.cmake)
 
 add_subdirectory(configured_files)
