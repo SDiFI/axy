@@ -5,7 +5,6 @@
 #include <grpcpp/server_context.h>
 #include <grpcpp/support/client_callback.h>
 #include <grpcpp/support/status.h>
-#include <readerwriterqueue.h>
 #include <sdifi/speech/v1alpha/speech.pb.h>
 #include <tiro/speech/v1alpha/speech.pb.h>
 

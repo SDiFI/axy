@@ -3,6 +3,7 @@ set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
 add_library(axylib
   speech-service.cc speech-service.h
   server.cc         server.h
+  logging.cc        logging.h
 )
 
 target_link_libraries(
@@ -14,7 +15,7 @@ target_link_libraries(
   gRPC::grpc++_reflection
   CLI11::CLI11
   fmt::fmt
-  readerwriterqueue
+  spdlog::spdlog
   protos
 )
 target_include_directories(
@@ -32,7 +33,9 @@ target_link_libraries(
   PRIVATE
   axylib
 )
-
+target_link_options(axy
+  PRIVATE -Wno-stringop-overflow # https://stackoverflow.com/a/75191691
+)
 
 add_executable(test-client
   test-client.cc

@@ -7,7 +7,6 @@ FetchContent_Declare(
   GIT_REPOSITORY https://github.com/fmtlib/fmt.git
   GIT_TAG        10.1.1
   GIT_SHALLOW    TRUE
-  EXCLUDE_FROM_ALL
 )
 
 FetchContent_MakeAvailable(fmt)
@@ -47,3 +46,13 @@ FetchContent_Declare(
 )
 
 FetchContent_MakeAvailable(cpr)
+
+set(SPDLOG_FMT_EXTERNAL ON)
+FetchContent_Declare(
+  spdlog
+  GIT_REPOSITORY https://github.com/gabime/spdlog.git
+  GIT_TAG        v1.12.0
+  GIT_SHALLOW    TRUE
+)
+
+FetchContent_MakeAvailable(spdlog)
