@@ -14,7 +14,6 @@ target_link_libraries(
   redis++::redis++_static
   hiredis::hiredis
   gRPC::grpc++
-  gRPC::grpc++_reflection
   CLI11::CLI11
   fmt::fmt
   spdlog::spdlog
