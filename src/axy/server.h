@@ -9,7 +9,6 @@
 #include <string>
 
 #include "src/axy/speech-service.h"
-#include "sw/redis++/redis.h"
 
 namespace axy {
 
@@ -23,8 +22,8 @@ class Server final {
     std::string listen_address = "localhost:50051";
     bool backend_speech_server_use_tls = true;
     std::string backend_speech_server_address = "speech.tiro.is:443";
-    std::chrono::seconds backend_speech_wait_delay_{10};
-    std::string redis_address = "redis://localhost";
+    std::chrono::seconds backend_speech_wait_delay{10};
+    std::string redis_address = "tcp://localhost:6379";
   };
 
   explicit Server(Options opts);
@@ -33,12 +32,10 @@ class Server final {
   ~Server() { Shutdown(); }
 
  private:
-  class Impl;
   Options opts_;
   std::shared_ptr<grpc::Channel> backend_speech_channel_;
   axy::SpeechServiceImpl speech_cb_service_;
   std::unique_ptr<grpc::Server> grpc_server_;
-  sw::redis::Redis redis_client_;
 };
 
 }  // namespace axy
