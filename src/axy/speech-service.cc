@@ -97,8 +97,7 @@ std::optional<std::string> ConvertToEvent(
       type = event.speech_final().GetTypeName();
       break;
     case Event::PAYLOAD_NOT_SET:
-      type = "<unk>";
-      break;
+      [[fallthrough]];
     default:
       return std::nullopt;
   }
