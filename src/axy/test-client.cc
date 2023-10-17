@@ -137,7 +137,7 @@ int main(int argc, char *argv[]) {
            .eof()) {
     if (!stream->Write(req)) {
       std::cerr << "Write failed\n";
-      return EXIT_FAILURE;
+      break;
     }
   }
 

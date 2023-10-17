@@ -14,14 +14,16 @@
 
 #include <atomic>
 #include <concepts>
-#include <cstdio>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
 #include "src/axy/logging.h"
+#include "src/axy/server.h"
 
 namespace axy {
 
@@ -104,7 +106,7 @@ std::optional<std::string> ConvertToEvent(
   return type;
 }
 
-void ConvertRequest(sdifi::speech::v1alpha::StreamingRecognizeRequest& in,
+void ConvertRequest(const sdifi::speech::v1alpha::StreamingRecognizeRequest& in,
                     tiro::speech::v1alpha::StreamingRecognizeRequest& out) {
   out.Clear();
   if (in.has_streaming_config()) {
@@ -141,7 +143,7 @@ void ConvertRequest(sdifi::speech::v1alpha::StreamingRecognizeRequest& in,
     }
 
   } else if (in.has_audio_content()) {
-    out.set_allocated_audio_content(in.release_audio_content());
+    out.set_audio_content(in.audio_content());
   }
 }
 
@@ -209,37 +211,81 @@ SpeechServiceImpl::StreamingRecognize(grpc::CallbackServerContext* context) {
       client_reactor_->StartCall();
     }
 
+    void SafelyFinish(grpc::Status status) {
+      std::lock_guard<std::mutex> lg{finish_mtx_};
+      if (finished_) {
+        return;
+      }
+      finished_ = true;
+      if (!client_gone_) {
+        client_reactor_->server_gone = true;
+      }
+
+      Finish(status);
+    }
+
+    void ReleaseClient() {
+      if (!client_gone_) {
+        client_reactor_->RemoveHold();
+        client_gone_ = true;
+      }
+    }
+
     void OnReadDone(bool ok) override {
       if (ok) {
         if (req.has_streaming_config()) {
           conversation_id_ = req.streaming_config().conversation();
+          if (conversation_id_.empty()) {
+            client_reactor_->server_gone = true;
+            SafelyFinish({grpc::StatusCode::INVALID_ARGUMENT,
+                          "Conversation ID missing from `streaming_config`"});
+            return;
+          }
         }
         ConvertRequest(req, client_reactor_->out_req);
-        client_reactor_->StartWrite(&client_reactor_->out_req);
+        StartWriteClient(&client_reactor_->out_req);
       } else {
-        client_reactor_->StartWritesDone();
+        StartWritesDoneClient();
       }
     }
 
     void OnDone() override {
+      std::lock_guard<std::mutex> lg{finish_mtx_};
+
       AXY_LOG_INFO("{}: server all done.", conversation_id_);
-      client_reactor_->server_gone = true;
-      client_reactor_->RemoveHold();
+      if (!client_gone_) {
+        client_reactor_->server_gone = true;
+        ReleaseClient();
+      }
       delete this;
     }
 
     void OnCancel() override {
       AXY_LOG_DEBUG("{}: server cancelled.", conversation_id_);
+      SafelyFinish(grpc::Status::CANCELLED);
     }
 
     void OnWriteDone(bool ok) override {
       if (!ok) {
-        fmt::println(stderr, "{}: no more server writes", conversation_id_);
-        Finish(grpc::Status::CANCELLED);
+        AXY_LOG_DEBUG("{}: no more server writes", conversation_id_);
+        SafelyFinish(grpc::Status::CANCELLED);
       }
     }
 
    private:
+    void StartWriteClient(
+        tiro::speech::v1alpha::StreamingRecognizeRequest* req) {
+      if (!client_gone_) {
+        client_reactor_->StartWrite(req);
+      }
+    }
+
+    void StartWritesDoneClient() {
+      if (!client_gone_) {
+        client_reactor_->StartWritesDone();
+      }
+    }
+
     // TODO(rkjaran): Generalize this client callback reactor for more backends
     class ClientReactor
         : public grpc::ClientBidiReactor<
@@ -272,7 +318,7 @@ SpeechServiceImpl::StreamingRecognize(grpc::CallbackServerContext* context) {
                   "sdifi/conversation/{key}",
                   fmt::arg("key", server_reactor_->conversation_id_));
 
-              AXY_LOG_INFO("Writing message to {}", stream_key);
+              AXY_LOG_DEBUG("Writing message to {}", stream_key);
               std::vector<std::pair<std::string, std::string>> attrs{
                   {":type", type.value()},
                   {":content", event.SerializeAsString()}};
@@ -283,8 +329,9 @@ SpeechServiceImpl::StreamingRecognize(grpc::CallbackServerContext* context) {
           StartRead(&in_resp);
         } else {
           AXY_LOG_DEBUG("no more client reads");
+
           if (!server_gone) {
-            server_reactor_->Finish(grpc::Status::OK);
+            server_reactor_->ReleaseClient();
           }
         }
       }
@@ -301,8 +348,21 @@ SpeechServiceImpl::StreamingRecognize(grpc::CallbackServerContext* context) {
         AXY_LOG_DEBUG("client writesdone done");
       }
 
-      void OnDone(const grpc::Status&) override {
+      void OnDone(const grpc::Status& status) override {
         AXY_LOG_INFO("client all done");
+
+        // Check for unknown here since there seems to be an upstream bug.
+        if (!status.ok()) {
+          AXY_LOG_INFO("... with error: code = {}, message = {}, details = {}",
+                       static_cast<std::underlying_type_t<grpc::StatusCode>>(
+                           status.error_code()),
+                       status.error_message(), status.error_details());
+        }
+
+        if (!server_gone) {
+          server_reactor_->SafelyFinish(status);
+        }
+
         delete this;
       }
 
@@ -318,6 +378,10 @@ SpeechServiceImpl::StreamingRecognize(grpc::CallbackServerContext* context) {
     };
 
     ClientReactor* client_reactor_;
+    std::atomic<bool> client_gone_ = false;
+
+    std::mutex finish_mtx_;
+    bool finished_ = false;
 
    public:
     sdifi::speech::v1alpha::StreamingRecognizeRequest req;
