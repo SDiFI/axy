@@ -1,5 +1,27 @@
 # Axy - Asynchronous proxy for SDiFI
 
+Axy is an asynchronous proxy for automatic speech recognition (ASR). At the
+moment it does two things:
+
+- Bidirectional gRPC connection with a conversational client, streaming audio in
+  and speech events and partial and final transcripts back to the client.
+- Writes these same events to a Redis stream identified by the conversation ID.
+
+![Axy diagram](docs/sdifi-axy.svg)
+
+Currently, the ASR backend has to implement the gRPC service
+[tiro.speech.v1alpha.Speech](https://github.com/tiro-is/tiro-speech-core/blob/master/proto/tiro/speech/v1alpha/speech.proto). But
+other backend types are planned.
+
+The messages that get written to the Redis Stream have at least two attributes:
+`:type` and `:content`. The `:type` attribute is the fully qualified Protobuf
+type of an `*Event` described in
+[events.proto](https://github.com/SDiFI/protos/blob/d5119598f04ee448c6e5fbff07571353cd3c7c44/sdifi/events/v1alpha/event.proto). E.g. for
+a final speech result (i.e. after an endpoint) `:type` would be
+`sdifi.events.v1alpha.SpeechFinalEvent`. The `:content` attribute is the
+serialized protobuf
+[Event](https://github.com/SDiFI/protos/blob/d5119598f04ee448c6e5fbff07571353cd3c7c44/sdifi/events/v1alpha/event.proto#L20).
+
 ## Building
 
 ### Requirements
@@ -12,7 +34,7 @@
 
 On Ubuntu 23.04 these can be installed with:
 
-``` shell
+```shell
 sudo apt install libgrpc++-dev protobuf-compiler-grpc libprotobuf-dev \
                  libhiredis-dev cmake
 ```
@@ -29,7 +51,7 @@ FetchContent. See [deps.cmake](cmake/deps.cmake) for details.
 
 To build a release build:
 
-``` shell
+```shell
 cmake -Bbuild -H. -DCMAKE_BUILD_TYPE=Release -DPREFER_STATIC=ON -GNinja
 cmake --build build
 ```
@@ -39,7 +61,7 @@ proxy itself.
 
 ### Build Docker image
 
-``` shell
+```shell
 docker build -t axy .
 ```
 
@@ -56,13 +78,12 @@ Usage: build/src/axy/axy [OPTIONS]
 Options:
   -h,--help                   Print this help message and exit
   --version                   Display program version information and exit
-  --log-level TEXT:{trace,debug,info,warn,error} [info] 
-  --listen-address TEXT [localhost:50051] 
-  --backend-speech-server-address TEXT [speech.tiro.is:443] 
+  --log-level TEXT:{trace,debug,info,warn,error} [info]
+  --listen-address TEXT [localhost:50051]
+  --backend-speech-server-address TEXT [speech.tiro.is:443]
                               gRPC server that provides the `tiro.speech.v1alpha.Speech` service.
   --backend-speech-server-use-tls
-  --redis-address TEXT [tcp://localhost:6379] 
+  --redis-address TEXT [tcp://localhost:6379]
                               The server will write conversation events to streams with keys 'sdifi/conversation/{conv_id}' where {conv_id} is the conversation ID.
 
 ```
-
