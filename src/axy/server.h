@@ -24,6 +24,7 @@ class Server final {
     std::string backend_speech_server_address = "speech.tiro.is:443";
     std::chrono::seconds backend_speech_wait_delay{10};
     std::string redis_address = "tcp://localhost:6379";
+    std::chrono::seconds shutdown_timeout{60};
   };
 
   explicit Server(Options opts);

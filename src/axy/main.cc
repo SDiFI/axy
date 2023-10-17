@@ -60,6 +60,8 @@ int main(int argc, char* argv[]) {
                    "The server will write conversation events to streams with "
                    "keys 'sdifi/conversation/{conv_id}' where {conv_id} is the "
                    "conversation ID.");
+    app.add_option("--shutdown-timeout-seconds", server_opts.shutdown_timeout,
+                   "Deadline for graceful shutdown.");
 
     CLI11_PARSE(app, argc, argv);
 

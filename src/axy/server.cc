@@ -10,6 +10,8 @@
 #include <memory>
 #include <stdexcept>
 
+#include "src/axy/logging.h"
+
 namespace axy {
 
 Server::Server(Options opts)
@@ -51,8 +53,10 @@ Server::Server(Options opts)
 void Server::Wait() { grpc_server_->Wait(); }
 
 void Server::Shutdown() {
+  AXY_LOG_INFO("Shutting down with a deadline of {}", opts_.shutdown_timeout);
   if (grpc_server_ != nullptr) {
-    grpc_server_->Shutdown();
+    grpc_server_->Shutdown(std::chrono::system_clock::now() +
+                           opts_.shutdown_timeout);
   }
 }
 
