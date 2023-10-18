@@ -28,14 +28,14 @@ class Server final {
   };
 
   explicit Server(Options opts);
+  ~Server() = default;
   void Wait();
   void Shutdown();
-  ~Server() { Shutdown(); }
 
  private:
   Options opts_;
   std::shared_ptr<grpc::Channel> backend_speech_channel_;
-  axy::SpeechServiceImpl speech_cb_service_;
+  axy::SpeechServiceImpl<TiroSpeechTypes> speech_cb_service_;
   std::unique_ptr<grpc::Server> grpc_server_;
 };
 

@@ -29,11 +29,12 @@ namespace axy {
 
 namespace {
 
+template <GoogleApiCompatibleTypes BackendTypes>
 auto Convert(
-    const tiro::speech::v1alpha::StreamingRecognizeResponse::SpeechEventType&
+    const typename BackendTypes::StreamingRecognizeResponse::SpeechEventType&
         in_event_type) {
   switch (in_event_type) {
-    using In = tiro::speech::v1alpha::StreamingRecognizeResponse;
+    using In = typename BackendTypes::StreamingRecognizeResponse;
     using Out = sdifi::speech::v1alpha::StreamingRecognizeResponse;
     case In::END_OF_SINGLE_UTTERANCE:
       return Out::END_OF_SINGLE_UTTERANCE;
@@ -42,22 +43,14 @@ auto Convert(
   }
 }
 
-template <typename T>
-concept StreamingRecognizeResponse = requires(T r) {
-                                       r.speech_event_type();
-                                       r.results(0);
-                                       {
-                                         r.results(0).is_final()
-                                         } -> std::same_as<bool>;
-                                     };
-
 /** Convert a streaming recognize response to an Event
  *
  * \returns The event type if the conversion was successful
  */
-template <StreamingRecognizeResponse T>
+template <GoogleApiCompatibleTypes BackendTypes>
 std::optional<std::string> ConvertToEvent(
-    const std::string& conversation_id, const T& resp,
+    const std::string& conversation_id,
+    const typename BackendTypes::StreamingRecognizeResponse& resp,
     sdifi::events::v1alpha::Event& event) {
   auto md = event.mutable_metadata();
 
@@ -67,9 +60,10 @@ std::optional<std::string> ConvertToEvent(
   auto convo = md->mutable_conversation();
   convo->set_name(conversation_id);
 
-  if (resp.speech_event_type() != T::SPEECH_EVENT_UNSPECIFIED) {
+  if (resp.speech_event_type() !=
+      BackendTypes::StreamingRecognizeResponse::SPEECH_EVENT_UNSPECIFIED) {
     event.mutable_speech_partial()->set_speech_event_type(
-        Convert(resp.speech_event_type()));
+        Convert<BackendTypes>(resp.speech_event_type()));
   } else if (resp.results_size() > 0) {
     auto result = resp.results(0);
     if (result.alternatives_size() > 0 &&
@@ -105,8 +99,9 @@ std::optional<std::string> ConvertToEvent(
   return type;
 }
 
+template <GoogleApiCompatibleTypes BackendTypes>
 void ConvertRequest(const sdifi::speech::v1alpha::StreamingRecognizeRequest& in,
-                    tiro::speech::v1alpha::StreamingRecognizeRequest& out) {
+                    typename BackendTypes::StreamingRecognizeRequest& out) {
   out.Clear();
   if (in.has_streaming_config()) {
     auto* out_streaming_config = out.mutable_streaming_config();
@@ -137,8 +132,7 @@ void ConvertRequest(const sdifi::speech::v1alpha::StreamingRecognizeRequest& in,
       case In::ENCODING_UNSPECIFIED:
         [[fallthrough]];
       default:
-        out_rec_config->set_encoding(
-            tiro::speech::v1alpha::RecognitionConfig::LINEAR16);
+        out_rec_config->set_encoding(BackendTypes::RecognitionConfig::LINEAR16);
     }
 
   } else if (in.has_audio_content()) {
@@ -146,17 +140,18 @@ void ConvertRequest(const sdifi::speech::v1alpha::StreamingRecognizeRequest& in,
   }
 }
 
+template <GoogleApiCompatibleTypes BackendTypes>
 void ConvertResponse(
-    const tiro::speech::v1alpha::StreamingRecognizeResponse& in,
+    const typename BackendTypes::StreamingRecognizeResponse& in,
     sdifi::speech::v1alpha::StreamingRecognizeResponse& out) {
   out.Clear();
   if (in.has_error()) {
     out.mutable_error()->CopyFrom(in.error());
   } else if (in.speech_event_type() !=
-             tiro::speech::v1alpha::StreamingRecognizeResponse::
+             BackendTypes::StreamingRecognizeResponse::
                  SPEECH_EVENT_UNSPECIFIED) {
     switch (in.speech_event_type()) {
-      using Ev = tiro::speech::v1alpha::StreamingRecognizeResponse;
+      using Ev = typename BackendTypes::StreamingRecognizeResponse;
       using OutEv = sdifi::speech::v1alpha::StreamingRecognizeResponse;
 
       case Ev::END_OF_SINGLE_UTTERANCE:
@@ -188,9 +183,13 @@ void ConvertResponse(
 
 }  // namespace
 
+template class SpeechServiceImpl<TiroSpeechTypes>;
+
+template <GoogleApiCompatibleTypes BackendTypes>
 grpc::ServerBidiReactor<sdifi::speech::v1alpha::StreamingRecognizeRequest,
                         sdifi::speech::v1alpha::StreamingRecognizeResponse>*
-SpeechServiceImpl::StreamingRecognize(grpc::CallbackServerContext* context) {
+SpeechServiceImpl<BackendTypes>::StreamingRecognize(
+    grpc::CallbackServerContext* context) {
   // This is a self deleting callback reactor
   class ServerReactor
       : public grpc::ServerBidiReactor<
@@ -198,7 +197,7 @@ SpeechServiceImpl::StreamingRecognize(grpc::CallbackServerContext* context) {
             sdifi::speech::v1alpha::StreamingRecognizeResponse> {
    public:
     explicit ServerReactor(grpc::CallbackServerContext* context,
-                           tiro::speech::v1alpha::Speech::Stub* stub,
+                           typename BackendTypes::Speech::Stub* stub,
                            sw::redis::Redis* redis_client)
         : client_reactor_{new ClientReactor{
               this, stub,
@@ -241,7 +240,7 @@ SpeechServiceImpl::StreamingRecognize(grpc::CallbackServerContext* context) {
             return;
           }
         }
-        ConvertRequest(req, client_reactor_->out_req);
+        ConvertRequest<BackendTypes>(req, client_reactor_->out_req);
         StartWriteClient(&client_reactor_->out_req);
       } else {
         StartWritesDoneClient();
@@ -273,7 +272,7 @@ SpeechServiceImpl::StreamingRecognize(grpc::CallbackServerContext* context) {
 
    private:
     void StartWriteClient(
-        tiro::speech::v1alpha::StreamingRecognizeRequest* req) {
+        typename BackendTypes::StreamingRecognizeRequest* req) {
       if (!client_gone_) {
         client_reactor_->StartWrite(req);
       }
@@ -288,11 +287,11 @@ SpeechServiceImpl::StreamingRecognize(grpc::CallbackServerContext* context) {
     // TODO(rkjaran): Generalize this client callback reactor for more backends
     class ClientReactor
         : public grpc::ClientBidiReactor<
-              tiro::speech::v1alpha::StreamingRecognizeRequest,
-              tiro::speech::v1alpha::StreamingRecognizeResponse> {
+              typename BackendTypes::StreamingRecognizeRequest,
+              typename BackendTypes::StreamingRecognizeResponse> {
      public:
       explicit ClientReactor(ServerReactor* server_reactor,
-                             tiro::speech::v1alpha::Speech::Stub* stub,
+                             typename BackendTypes::Speech::Stub* stub,
                              std::unique_ptr<grpc::ClientContext> ctx,
                              sw::redis::Redis* redis_client)
           : server_reactor_{server_reactor},
@@ -304,15 +303,15 @@ SpeechServiceImpl::StreamingRecognize(grpc::CallbackServerContext* context) {
       void OnReadDone(bool ok) override {
         if (ok) {
           if (!server_gone) {
-            ConvertResponse(in_resp, server_reactor_->resp);
+            ConvertResponse<BackendTypes>(in_resp, server_reactor_->resp);
             server_reactor_->StartWrite(&server_reactor_->resp);
           }
 
           if (redis_client_ != nullptr) {
             sdifi::events::v1alpha::Event event;
 
-            if (auto type = ConvertToEvent(server_reactor_->conversation_id_,
-                                           in_resp, event)) {
+            if (auto type = ConvertToEvent<BackendTypes>(
+                    server_reactor_->conversation_id_, in_resp, event)) {
               std::string stream_key = fmt::format(
                   "sdifi/conversation/{key}",
                   fmt::arg("key", server_reactor_->conversation_id_));
@@ -325,7 +324,7 @@ SpeechServiceImpl::StreamingRecognize(grpc::CallbackServerContext* context) {
             }
           }
 
-          StartRead(&in_resp);
+          this->StartRead(&in_resp);
         } else {
           AXY_LOG_DEBUG("no more client reads");
 
@@ -372,8 +371,8 @@ SpeechServiceImpl::StreamingRecognize(grpc::CallbackServerContext* context) {
 
      public:
       std::atomic<bool> server_gone = false;
-      tiro::speech::v1alpha::StreamingRecognizeResponse in_resp;
-      tiro::speech::v1alpha::StreamingRecognizeRequest out_req;
+      typename BackendTypes::StreamingRecognizeResponse in_resp;
+      typename BackendTypes::StreamingRecognizeRequest out_req;
     };
 
     ClientReactor* client_reactor_;
