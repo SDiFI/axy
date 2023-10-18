@@ -49,12 +49,6 @@ add_subdirectory(configured_files)
 add_subdirectory(proto)
 add_subdirectory(src)
 
-option(ENABLE_TESTING "Enable the tests" ${PROJECT_IS_TOP_LEVEL})
-if(ENABLE_TESTING)
-  enable_testing()
-  add_subdirectory(test)
-endif()
-
 if(CMAKE_SKIP_INSTALL_RULES)
   return()
 elseif(NOT PROJECT_IS_TOP_LEVEL)

@@ -1,0 +1,9 @@
+version: v1
+managed:
+  enabled: true
+plugins:
+  - plugin: cpp
+    out: .
+  - plugin: grpc
+    path: grpc_cpp_plugin
+    out: .
