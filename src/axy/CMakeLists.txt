@@ -1,6 +1,6 @@
 set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
 
-add_link_options($<$<BOOL:ENABLE_SANITIZERS>:$<$<CONFIG:DEBUG>:-fsanitize=undefined,address>>)
+add_link_options($<$<BOOL:${ENABLE_SANITIZERS}>:$<$<CONFIG:DEBUG>:-fsanitize=undefined,address>>)
 
 add_library(axylib
   speech-service.cc speech-service.h
