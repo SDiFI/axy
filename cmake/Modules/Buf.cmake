@@ -5,8 +5,8 @@ function(buf_generate_sources)
   set(seen_protos "")
   set(generated_srcs_and_hdrs "")
 
-  string(REPLACE ";" "_" buf_seen_invoc_id ${PROTO_REPOSITORIES})
-  if(NOT "${BUF_SEEN_INVOC_${buf_seen_invo_id}}" STREQUAL "")
+  string(REPLACE ";" "_" buf_seen_invoc_id "${PROTO_REPOSITORIES}")
+  if(NOT "${BUF_SEEN_INVOC_${buf_seen_invoc_id}}" STREQUAL "")
     set(generated_srcs_and_hdrs ${BUF_SEEN_INVOC_${buf_seen_invo_id}})
   else()
     foreach(_repo ${PROTO_REPOSITORIES})
@@ -51,12 +51,17 @@ function(buf_generate_sources)
         ${proto_hdrs} ${proto_srcs} ${proto_grpc_hdrs} ${proto_grpc_srcs}
       )
 
+      list(TRANSFORM proto_generated PREPEND "${CMAKE_CURRENT_BINARY_DIR}/${dir_safe_repo}/")
+      if("${proto_generated}" STREQUAL "")
+        message(FATAL_ERROR "[Buf] no sources will be generated")
+      endif()
+
       get_property(grpc_cpp_plugin TARGET gRPC::grpc_cpp_plugin PROPERTY LOCATION)
 
       add_custom_command(
         OUTPUT ${proto_generated}
         COMMAND ${BUF} generate "${_repo}" -o ${CMAKE_CURRENT_BINARY_DIR} ${include_imports_arg}
-                --template=${CMAKE_SOURCE_DIR}
+                --template=${CMAKE_SOURCE_DIR}/buf.gen.yaml
         COMMENT "[Buf] Generating gRPC code from ${_repo}"
         VERBATIM
       )
@@ -66,9 +71,7 @@ function(buf_generate_sources)
   endif()
 
   set(BUF_SEEN_REPOS "${PROTO_REPOSITORIES};${BUF_SEEN_REPOS}" CACHE INTERNAL "")
-  set(BUF_SEEN_PROTOS "${PROTO_REPOSITORIES};${BUF_SEEN_REPOS}" CACHE INTERNAL "")
-
-  set("BUF_SEEN_INVOC_${buf_seen_invo_id}" ${generated_srcs_and_hdrs} CACHE INTERNAL "")
+  set("BUF_SEEN_INVOC_${buf_seen_invoc_id}" ${generated_srcs_and_hdrs} CACHE INTERNAL "")
 
   set(${PROTO_OUTPUT} ${generated_srcs_and_hdrs} PARENT_SCOPE)
 endfunction()
