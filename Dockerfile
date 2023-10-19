@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.3
 FROM debian:bookworm-slim AS build
 
 RUN apt-get update && apt-get install -y \
@@ -11,6 +12,7 @@ RUN apt-get update && apt-get install -y \
     libprotobuf-dev \
     ninja-build \
     curl \
+    ccache \
     && rm -rf /var/lib/apt/lists/*
 
 RUN curl -sSL "https://github.com/bufbuild/buf/releases/download/v1.27.0/buf-$(uname -s)-$(uname -m)" -o /usr/bin/buf \
@@ -18,9 +20,11 @@ RUN curl -sSL "https://github.com/bufbuild/buf/releases/download/v1.27.0/buf-$(u
 
 COPY . .
 
-RUN cmake -B/build -H. -GNinja \
+ENV CCACHE_DIR /ccache
+RUN --mount=type=cache,target=/cache/ cmake -B/build -H. -GNinja \
     -DCMAKE_INSTALL_PREFIX=/build/install \
     -DCMAKE_BUILD_TYPE=Release -DPREFER_STATIC=ON \
+    -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
     && cmake --build /build --target install
 
 
