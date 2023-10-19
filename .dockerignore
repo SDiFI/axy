@@ -5,3 +5,5 @@
 !configured_files/**
 !cmake/**
 !CMakeLists.txt
+!buf.gen.yaml
+
