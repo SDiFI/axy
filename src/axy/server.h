@@ -8,7 +8,9 @@
 #include <stdexcept>
 #include <string>
 
+#include "src/axy/event-service.h"
 #include "src/axy/speech-service.h"
+#include "sw/redis++/redis.h"
 
 namespace axy {
 
@@ -34,7 +36,9 @@ class Server final {
 
  private:
   Options opts_;
+  std::shared_ptr<sw::redis::Redis> redis_;
   std::shared_ptr<grpc::Channel> backend_speech_channel_;
+  axy::EventServiceImpl event_cb_service_;
   axy::SpeechServiceImpl<TiroSpeechTypes> speech_cb_service_;
   std::unique_ptr<grpc::Server> grpc_server_;
 };

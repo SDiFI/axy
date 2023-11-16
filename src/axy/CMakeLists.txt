@@ -4,6 +4,7 @@ add_link_options($<$<BOOL:${ENABLE_SANITIZERS}>:$<$<CONFIG:DEBUG>:-fsanitize=und
 
 add_library(axylib
   speech-service.cc speech-service.h
+  event-service.cc  event-service.h
   server.cc         server.h
   logging.cc        logging.h
 )

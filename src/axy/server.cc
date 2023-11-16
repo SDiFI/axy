@@ -16,6 +16,8 @@ namespace axy {
 
 Server::Server(Options opts)
     : opts_{std::move(opts)},
+      redis_{std::make_shared<sw::redis::Redis>(opts_.redis_address)},
+      event_cb_service_{redis_},
       backend_speech_channel_{
           grpc::CreateChannel(opts_.backend_speech_server_address,
                               [&]() {
@@ -25,17 +27,16 @@ Server::Server(Options opts)
                                   return grpc::InsecureChannelCredentials();
                                 }
                               }())},
-      speech_cb_service_{backend_speech_channel_, opts_.redis_address},
+      speech_cb_service_{backend_speech_channel_, redis_},
       grpc_server_{[&]() {
         grpc::EnableDefaultHealthCheckService(true);
         grpc::ServerBuilder server_builder{};
         server_builder.RegisterService(&speech_cb_service_)
+            .RegisterService(&event_cb_service_)
             .AddListeningPort(opts_.listen_address,
                               grpc::InsecureServerCredentials());
         return server_builder.BuildAndStart();
-      }()}
-
-{
+      }()} {
   if (grpc_server_ == nullptr) {
     throw ServerError{
         fmt::format("Could not build gRPC server listening on '{}'.",
