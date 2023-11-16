@@ -29,24 +29,6 @@ FetchContent_Declare(
 
 FetchContent_MakeAvailable(redis++)
 
-FetchContent_Declare(
-  nlohmann_json
-  GIT_REPOSITORY https://github.com/nlohmann/json.git
-  GIT_TAG        v3.11.2
-  GIT_SHALLOW    TRUE
-)
-
-FetchContent_MakeAvailable(nlohmann_json)
-
-FetchContent_Declare(
-  cpr
-  GIT_REPOSITORY https://github.com/libcpr/cpr.git
-  GIT_TAG        1.10.4
-  GIT_SHALLOW    TRUE
-)
-
-FetchContent_MakeAvailable(cpr)
-
 set(SPDLOG_FMT_EXTERNAL ON)
 FetchContent_Declare(
   spdlog
