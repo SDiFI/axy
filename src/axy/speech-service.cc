@@ -13,7 +13,7 @@
 #include <tiro/speech/v1alpha/speech.pb.h>
 
 #include <atomic>
-#include <concepts>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -184,6 +184,7 @@ void ConvertResponse(
 }  // namespace
 
 template class SpeechServiceImpl<TiroSpeechTypes>;
+template class SpeechServiceImpl<GoogleSpeechTypes>;
 
 template <GoogleApiCompatibleTypes BackendTypes>
 grpc::ServerBidiReactor<sdifi::speech::v1alpha::StreamingRecognizeRequest,
@@ -196,13 +197,15 @@ SpeechServiceImpl<BackendTypes>::StreamingRecognize(
             sdifi::speech::v1alpha::StreamingRecognizeRequest,
             sdifi::speech::v1alpha::StreamingRecognizeResponse> {
    public:
-    explicit ServerReactor(grpc::CallbackServerContext* context,
-                           typename BackendTypes::Speech::Stub* stub,
-                           sw::redis::Redis* redis_client)
+    explicit ServerReactor(
+        grpc::CallbackServerContext* context,
+        typename BackendTypes::Speech::Stub* stub,
+        sw::redis::Redis* redis_client,
+        const std::map<std::string, std::string>& extra_headers)
         : client_reactor_{new ClientReactor{
               this, stub,
               grpc::ClientContext::FromCallbackServerContext(*context),
-              redis_client}} {
+              redis_client, extra_headers}} {
       StartRead(&req);
       client_reactor_->StartRead(&client_reactor_->in_resp);
       client_reactor_->AddHold();
@@ -290,13 +293,18 @@ SpeechServiceImpl<BackendTypes>::StreamingRecognize(
               typename BackendTypes::StreamingRecognizeRequest,
               typename BackendTypes::StreamingRecognizeResponse> {
      public:
-      explicit ClientReactor(ServerReactor* server_reactor,
-                             typename BackendTypes::Speech::Stub* stub,
-                             std::unique_ptr<grpc::ClientContext> ctx,
-                             sw::redis::Redis* redis_client)
+      explicit ClientReactor(
+          ServerReactor* server_reactor,
+          typename BackendTypes::Speech::Stub* stub,
+          std::unique_ptr<grpc::ClientContext> ctx,
+          sw::redis::Redis* redis_client,
+          const std::map<std::string, std::string>& extra_headers)
           : server_reactor_{server_reactor},
             ctx_{std::move(ctx)},
             redis_client_{redis_client} {
+        for (const auto& [key, val] : extra_headers) {
+          ctx_->AddMetadata(key, val);
+        }
         stub->async()->StreamingRecognize(ctx_.get(), this);
       }
 
@@ -388,7 +396,8 @@ SpeechServiceImpl<BackendTypes>::StreamingRecognize(
   };
 
   // ServerReactor deletes itself once finished.
-  return new ServerReactor{context, stub_.get(), redis_client_.get()};
+  return new ServerReactor{context, stub_.get(), redis_client_.get(),
+                           extra_headers_};
 }
 
 }  // namespace axy

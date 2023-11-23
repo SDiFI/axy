@@ -50,10 +50,14 @@ int main(int argc, char* argv[]) {
 
     axy::Server::Options server_opts;
     app.add_option("--listen-address", server_opts.listen_address);
-    app.add_option("--backend-speech-server-address",
-                   server_opts.backend_speech_server_address,
-                   "gRPC server that provides the "
-                   "`tiro.speech.v1alpha.Speech` service.");
+    app.add_option(
+        "--backend-speech-server-address",
+        server_opts.backend_speech_server_address,
+        "gRPC server that provides the `tiro.speech.v1alpha.Speech` service. "
+        "Alternatively, you can set this to `speech.googleapis.com:443` to use "
+        "Google Cloud Speech. In that case Axy will use Google Application "
+        "Default Credentials and the evironment variable "
+        "`GOOGLE_CLOUD_QUOTA_PROJECT` has to be set.");
     app.add_flag("--backend-speech-server-use-tls",
                  server_opts.backend_speech_server_use_tls);
     app.add_option("--redis-address", server_opts.redis_address,
