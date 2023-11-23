@@ -19,6 +19,7 @@ target_link_libraries(
   fmt::fmt
   spdlog::spdlog
   protos
+  google-cloud-cpp::speech
 )
 target_include_directories(
   axylib
