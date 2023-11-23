@@ -9,9 +9,8 @@ moment it does two things:
 
 ![Axy diagram](docs/sdifi-axy.svg)
 
-Currently, the ASR backend has to implement the gRPC service
-[tiro.speech.v1alpha.Speech](https://github.com/tiro-is/tiro-speech-core/blob/master/proto/tiro/speech/v1alpha/speech.proto). But
-other backend types are planned.
+Two ASR backends are supported, both using gRPC: [tiro.speech.v1alpha.Speech](https://github.com/tiro-is/tiro-speech-core/blob/master/proto/tiro/speech/v1alpha/speech.proto) 
+and [Google Cloud Speech API](https://cloud.google.com/speech-to-text/docs/reference/rpc).
 
 The messages that get written to the Redis Stream have at least two attributes:
 `:type` and `:content`. The `:type` attribute is the fully qualified Protobuf
@@ -46,6 +45,7 @@ FetchContent. See [deps.cmake](cmake/deps.cmake) for details.
 - [nhlomann_json](https://github.com/nlohmann/json)
 - [fmtlib](https://github.com/fmtlib/fmt)
 - [CLI11](https://github.com/CLIUtils/CLI11)
+- [google-cloud-cpp::speech](https://github.com/googleapis/google-cloud-cpp)
 
 ### Build with CMake
 
@@ -78,12 +78,13 @@ Usage: build/src/axy/axy [OPTIONS]
 Options:
   -h,--help                   Print this help message and exit
   --version                   Display program version information and exit
-  --log-level TEXT:{trace,debug,info,warn,error} [info]
-  --listen-address TEXT [localhost:50051]
-  --backend-speech-server-address TEXT [speech.tiro.is:443]
-                              gRPC server that provides the `tiro.speech.v1alpha.Speech` service.
+  --log-level TEXT:{trace,debug,info,warn,error} [info] 
+  --listen-address TEXT [localhost:50051] 
+  --backend-speech-server-address TEXT [speech.tiro.is:443] 
+                              gRPC server that provides the `tiro.speech.v1alpha.Speech` service. Alternatively, you can set this to `speech.googleapis.com:443` to use Google Cloud Speech. In that case Axy will use Google Application Default Credentials and the evironment variable `GOOGLE_CLOUD_QUOTA_PROJECT` has to be set.
   --backend-speech-server-use-tls
-  --redis-address TEXT [tcp://localhost:6379]
+  --redis-address TEXT [tcp://localhost:6379] 
                               The server will write conversation events to streams with keys 'sdifi/conversation/{conv_id}' where {conv_id} is the conversation ID.
-
+  --shutdown-timeout-seconds INT [60s] 
+                              Deadline for graceful shutdown.
 ```
