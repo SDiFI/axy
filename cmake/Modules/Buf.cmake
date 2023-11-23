@@ -7,7 +7,7 @@ function(buf_generate_sources)
 
   string(REPLACE ";" "_" buf_seen_invoc_id "${PROTO_REPOSITORIES}")
   if(NOT "${BUF_SEEN_INVOC_${buf_seen_invoc_id}}" STREQUAL "")
-    set(generated_srcs_and_hdrs ${BUF_SEEN_INVOC_${buf_seen_invo_id}})
+    set(generated_srcs_and_hdrs "${BUF_SEEN_INVOC_${buf_seen_invoc_id}}")
   else()
     foreach(_repo ${PROTO_REPOSITORIES})
       message(STATUS "[Buf] getting proto file list from ${_repo}")
@@ -70,7 +70,6 @@ function(buf_generate_sources)
     endforeach()
   endif()
 
-  set(BUF_SEEN_REPOS "${PROTO_REPOSITORIES};${BUF_SEEN_REPOS}" CACHE INTERNAL "")
   set("BUF_SEEN_INVOC_${buf_seen_invoc_id}" ${generated_srcs_and_hdrs} CACHE INTERNAL "")
 
   set(${PROTO_OUTPUT} ${generated_srcs_and_hdrs} PARENT_SCOPE)

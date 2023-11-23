@@ -48,9 +48,9 @@ class SpeechServiceImpl final
  public:
   explicit SpeechServiceImpl(
       const std::shared_ptr<grpc::Channel>& speech_server_channel,
-      const std::string& redis_address)
+      std::shared_ptr<sw::redis::Redis> redis_client)
       : stub_{BackendTypes::Speech::NewStub(speech_server_channel)},
-        redis_client_{redis_address} {}
+        redis_client_{std::move(redis_client)} {}
   // TODO(rkjaran): Make redis optional? Or add a generic callback interface for
   //   results?
 
@@ -60,7 +60,7 @@ class SpeechServiceImpl final
 
  private:
   std::unique_ptr<typename BackendTypes::Speech::Stub> stub_;
-  sw::redis::Redis redis_client_;
+  std::shared_ptr<sw::redis::Redis> redis_client_;
 };
 
 }  // namespace axy

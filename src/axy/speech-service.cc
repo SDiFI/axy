@@ -65,7 +65,7 @@ std::optional<std::string> ConvertToEvent(
     event.mutable_speech_partial()->set_speech_event_type(
         Convert<BackendTypes>(resp.speech_event_type()));
   } else if (resp.results_size() > 0) {
-    auto result = resp.results(0);
+    auto& result = resp.results(0);
     if (result.alternatives_size() > 0 &&
         !result.alternatives(0).transcript().empty()) {
       if (result.is_final()) {
@@ -388,7 +388,7 @@ SpeechServiceImpl<BackendTypes>::StreamingRecognize(
   };
 
   // ServerReactor deletes itself once finished.
-  return new ServerReactor{context, stub_.get(), &redis_client_};
+  return new ServerReactor{context, stub_.get(), redis_client_.get()};
 }
 
 }  // namespace axy
